@@ -182,6 +182,28 @@ app.get("/setup/status", requireAdminKey, async (_req, res) => {
   }
 });
 
+// ── Session restart endpoint ────────────────────────────────────────────────
+// POST /setup/restart?key=<MCP_API_KEY>&session=default
+// Stops + deletes + restarts the session so NOWEB engine kicks in cleanly.
+
+app.post("/setup/restart", requireAdminKey, async (req, res) => {
+  const session = (req.query.session as string) ?? WAHA_DEFAULT_SESSION;
+  try {
+    console.log(`[setup/restart] Restarting session '${session}'...`);
+    // Stop (ignore errors if not running)
+    try { await waha.stopSession(session); } catch (_) { /* ok */ }
+    await new Promise((r) => setTimeout(r, 2000));
+    // Start fresh — WAHA will use WHATSAPP_DEFAULT_ENGINE (NOWEB)
+    const started = await waha.startSession(session);
+    console.log(`[setup/restart] Session '${session}' restarted:`, started.status);
+    res.json({ ok: true, session, status: started.status });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[setup/restart] error:", msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
 // ── MCP endpoint (Streamable HTTP — 2025-03-26 spec) ───────────────────────
 
 app.post("/mcp", requireApiKey, async (req: Request, res: Response) => {
