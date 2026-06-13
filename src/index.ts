@@ -62,11 +62,12 @@ function requireAdminKey(req: Request, res: Response, next: NextFunction): void 
 // ── Health check ────────────────────────────────────────────────────────────
 
 app.get("/health", async (_req, res) => {
+  // Always return 200 — Railway uses this to determine if the MCP server
+  // process is healthy, not whether WAHA is reachable. WAHA connectivity
+  // is reported in the body for observability but never blocks deployment.
   const wahaStatus = await waha.ping();
-  const status = wahaStatus.ok ? "ok" : "degraded";
-
-  res.status(wahaStatus.ok ? 200 : 503).json({
-    status,
+  res.status(200).json({
+    status: wahaStatus.ok ? "ok" : "degraded",
     waha: {
       url: WAHA_BASE_URL,
       reachable: wahaStatus.ok,
