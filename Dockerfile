@@ -24,6 +24,11 @@ COPY --from=builder /mcp/node_modules /mcp/node_modules
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
+# Override WAHA's EXPOSE 3000 so Railway routes external traffic to 8080
+# and injects PORT=8080. Without this Railway uses WAHA's EXPOSE 3000, routes
+# to 3000, and our MCP server (on 8080) is unreachable from outside.
+EXPOSE 8080
+
 # Override the base image's ENTRYPOINT (devlikeapro/waha sets one).
 # Without this, CMD ["/start.sh"] is passed as an argument to WAHA's
 # entrypoint instead of replacing it, so our script never runs.
