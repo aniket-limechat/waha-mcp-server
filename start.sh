@@ -27,7 +27,10 @@ else
   WAHA_ENTRY="dist/main.js"
 fi
 echo "[start] Starting WAHA ($WAHA_ENTRY) on :3000..."
-node "$WAHA_ENTRY" &
+# Pin WAHA to port 3000 — WAHA also reads PORT, and Railway injects
+# PORT=8080 for the MCP server. Without this override WAHA would try
+# to bind to 8080 as well, causing EADDRINUSE and crashing.
+PORT=3000 node "$WAHA_ENTRY" &
 WAHA_PID=$!
 
 # ── Start MCP server ────────────────────────────────────────────────────────
