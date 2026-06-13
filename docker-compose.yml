@@ -1,0 +1,27 @@
+services:
+
+  # ── WhatsApp HTTP API ───────────────────────────────────────────────────────
+  waha:
+    image: devlikeapro/waha-plus
+    environment:
+      # Maps your WAHA_API_KEY Railway variable → WAHA's expected var name
+      # You do NOT need to set WHATSAPP_API_KEY separately
+      WHATSAPP_API_KEY: ${WAHA_API_KEY}
+    volumes:
+      - waha_sessions:/app/.sessions
+    restart: unless-stopped
+
+  # ── MCP Server ──────────────────────────────────────────────────────────────
+  waha-mcp:
+    build: .
+    environment:
+      MCP_API_KEY: ${MCP_API_KEY}
+      WAHA_API_KEY: ${WAHA_API_KEY}
+      # Internal Docker networking — waha-mcp reaches waha via service name
+      WAHA_BASE_URL: http://waha:3000
+    depends_on:
+      - waha
+    restart: unless-stopped
+
+volumes:
+  waha_sessions:
