@@ -38,6 +38,17 @@ const transports = new Map<string, StreamableHTTPServerTransport>();
 const app = express();
 app.use(express.json({ limit: "10mb" }));
 
+// ── Request logger — logs EVERY incoming request so we can see Railway health
+//    checks and Hikari proxy hits in Railway logs ──────────────────────────
+app.use((req, _res, next) => {
+  const xff = req.headers["x-forwarded-for"] ?? "-";
+  const key = req.headers["x-api-key"] ? "key:present" : "no-key";
+  process.stdout.write(
+    `[http] ${req.method} ${req.path} (${key}, xff=${xff}, ip=${req.ip})\n`
+  );
+  next();
+});
+
 // ── Auth middleware ─────────────────────────────────────────────────────────
 
 function requireApiKey(req: Request, res: Response, next: NextFunction): void {
@@ -285,24 +296,19 @@ process.on("unhandledRejection", (reason) => {
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 
-// Bind to :: (IPv6 any) with dual-stack — accepts BOTH IPv4 and IPv6 connections.
-//
-// Why not "0.0.0.0"?
-//   Diagnostic confirmed: ss shows WAHA on *:3001 (=:::3001, dual-stack) while MCP
-//   on 0.0.0.0:8080. Railway's Hikari proxy reaches containers via IPv6 overlay
-//   network → 0.0.0.0 (IPv4-only) gets ECONNREFUSED externally (502), but Railway's
-//   health check probes via IPv4 loopback on the same node (passes → deploy SUCCESS).
-//   Binding to :: with ipv6Only=false mirrors what NestJS/WAHA does by default and
-//   makes the server reachable over both IPv4 and IPv6.
-const httpServer = app.listen({ port: PORT, host: "::", ipv6Only: false }, async () => {
+// Bind to 0.0.0.0 — Railway's recommended binding for container services.
+// Railway containers have IPv6 egress disabled; binding to :: can produce a socket
+// that only responds on loopback when IPv6 is not fully configured in the network
+// namespace, causing ECONNREFUSED from Hikari proxy despite localhost 200.
+const httpServer = app.listen(PORT, "0.0.0.0", async () => {
   // Flush synchronously so Railway captures this even if we crash right after
-  process.stdout.write(`\n[waha-mcp] Server started on :::${PORT} (dual-stack)\n`);
+  process.stdout.write(`\n[waha-mcp] Server started on 0.0.0.0:${PORT}\n`);
   process.stdout.write(`  MCP endpoint : POST /mcp  (x-api-key: <MCP_API_KEY>)\n`);
   process.stdout.write(`  QR setup     : GET  /setup/qr?key=<MCP_API_KEY>\n`);
   process.stdout.write(`  Session info : GET  /setup/status?key=<MCP_API_KEY>\n`);
   process.stdout.write(`  Health       : GET  /health\n`);
   process.stdout.write(`  WAHA backend : ${WAHA_BASE_URL}\n`);
-  process.stdout.write(`  Bound on     : :::${PORT} (IPv4+IPv6 dual-stack)\n\n`);
+  process.stdout.write(`  Bound on     : 0.0.0.0:${PORT}\n\n`);
 
   await startupChecks();
 });

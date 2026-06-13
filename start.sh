@@ -16,6 +16,12 @@ WAHA_PORT=3001
 export WHATSAPP_API_KEY="${WHATSAPP_API_KEY:-$WAHA_API_KEY}"
 export WAHA_BASE_URL="http://localhost:${WAHA_PORT}"
 
+# ── Open port 8080 in iptables (Railway containers may have restrictive rules)
+# Silently ignored if iptables is not available or permission denied.
+iptables -I INPUT   -p tcp --dport ${MCP_PORT} -j ACCEPT 2>/dev/null || true
+iptables -I FORWARD -p tcp --dport ${MCP_PORT} -j ACCEPT 2>/dev/null || true
+echo "[start] iptables: ensured port ${MCP_PORT} ACCEPT rules (or skipped if unavailable)"
+
 # ── Graceful shutdown (kills WAHA when MCP exits) ──────────────────────────
 cleanup() {
   echo "[start] MCP exited — killing WAHA (pid ${WAHA_PID:-?})..."
@@ -67,9 +73,12 @@ echo "[start] MCP PID=${MCP_PID}"
             || echo "ss/netstat unavailable")
     MCP_HTTP=$(curl -s -m 3 -o /dev/null -w '%{http_code}' http://localhost:${MCP_PORT}/health 2>&1 || echo "ERR")
     WAHA_HTTP=$(curl -s -m 3 -o /dev/null -w '%{http_code}' http://localhost:${WAHA_PORT}/health 2>&1 || echo "ERR")
+    ETH0_IP=$(ip -4 addr show eth0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 || echo "unknown")
+    ETH0_HTTP=$(curl -s -m 3 -o /dev/null -w '%{http_code}' "http://${ETH0_IP}:${MCP_PORT}/health" 2>&1 || echo "ERR")
     echo "[diag] ports listening: ${PORTS}"
     echo "[diag] localhost:${MCP_PORT}/health → HTTP ${MCP_HTTP}"
     echo "[diag] localhost:${WAHA_PORT}/health → HTTP ${WAHA_HTTP}"
+    echo "[diag] eth0 IP: ${ETH0_IP}  eth0:${MCP_PORT}/health → HTTP ${ETH0_HTTP}"
     sleep 15
   done
 ) &
