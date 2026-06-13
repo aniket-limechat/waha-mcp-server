@@ -13,6 +13,10 @@ RUN npm run build && npm prune --omit=dev
 FROM devlikeapro/waha
 
 # Copy compiled MCP server and its production node_modules
+# package.json is required so Node.js knows /mcp/dist/*.js files are ESM
+# (package.json has "type":"module"; without it Node defaults to CJS and
+#  crashes with SyntaxError on the import statements in the compiled output)
+COPY --from=builder /mcp/package.json /mcp/package.json
 COPY --from=builder /mcp/dist /mcp/dist
 COPY --from=builder /mcp/node_modules /mcp/node_modules
 
