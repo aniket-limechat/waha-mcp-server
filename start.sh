@@ -18,8 +18,16 @@ cleanup() {
 trap cleanup EXIT TERM INT
 
 # ── Start WAHA ──────────────────────────────────────────────────────────────
-echo "[start] Starting WAHA on :3000..."
-cd /app && node dist/main.js &
+# The free devlikeapro/waha image uses dist/index.js as the entrypoint.
+# (waha-plus uses dist/main.js — detect which exists to be safe)
+cd /app
+if [ -f dist/index.js ]; then
+  WAHA_ENTRY="dist/index.js"
+else
+  WAHA_ENTRY="dist/main.js"
+fi
+echo "[start] Starting WAHA ($WAHA_ENTRY) on :3000..."
+node "$WAHA_ENTRY" &
 WAHA_PID=$!
 
 # ── Start MCP server ────────────────────────────────────────────────────────

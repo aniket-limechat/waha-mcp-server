@@ -20,4 +20,7 @@ COPY --from=builder /mcp/node_modules /mcp/node_modules
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
-CMD ["/start.sh"]
+# Override the base image's ENTRYPOINT (devlikeapro/waha sets one).
+# Without this, CMD ["/start.sh"] is passed as an argument to WAHA's
+# entrypoint instead of replacing it, so our script never runs.
+ENTRYPOINT ["/bin/bash", "/start.sh"]
