@@ -270,15 +270,34 @@ async function startupChecks(): Promise<void> {
   }
 }
 
+// ── Global crash handlers — make crashes visible in Railway logs ──────────────
+
+process.on("uncaughtException", (err) => {
+  console.error("[fatal] Uncaught exception:", err.message);
+  console.error(err.stack);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[fatal] Unhandled rejection:", reason);
+  process.exit(1);
+});
+
 // ── Boot ─────────────────────────────────────────────────────────────────────
 
-app.listen(PORT, async () => {
-  console.log(`\n[waha-mcp] Server started on :${PORT}`);
-  console.log(`  MCP endpoint : POST /mcp  (x-api-key: <MCP_API_KEY>)`);
-  console.log(`  QR setup     : GET  /setup/qr?key=<MCP_API_KEY>`);
-  console.log(`  Session info : GET  /setup/status?key=<MCP_API_KEY>`);
-  console.log(`  Health       : GET  /health`);
-  console.log(`  WAHA backend : ${WAHA_BASE_URL}\n`);
+const httpServer = app.listen(PORT, async () => {
+  // Flush synchronously so Railway captures this even if we crash right after
+  process.stdout.write(`\n[waha-mcp] Server started on :${PORT}\n`);
+  process.stdout.write(`  MCP endpoint : POST /mcp  (x-api-key: <MCP_API_KEY>)\n`);
+  process.stdout.write(`  QR setup     : GET  /setup/qr?key=<MCP_API_KEY>\n`);
+  process.stdout.write(`  Session info : GET  /setup/status?key=<MCP_API_KEY>\n`);
+  process.stdout.write(`  Health       : GET  /health\n`);
+  process.stdout.write(`  WAHA backend : ${WAHA_BASE_URL}\n\n`);
 
   await startupChecks();
+});
+
+httpServer.on("error", (err: NodeJS.ErrnoException) => {
+  console.error(`[fatal] Cannot bind to port ${PORT}:`, err.code, err.message);
+  process.exit(1);
 });
