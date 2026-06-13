@@ -21,8 +21,8 @@ function requireEnv(name: string): string {
 const PORT = parseInt(process.env.PORT ?? "8080", 10);
 const MCP_API_KEY = requireEnv("MCP_API_KEY");
 const WAHA_API_KEY = requireEnv("WAHA_API_KEY");
-// In single-container mode start.sh sets this to http://localhost:3000 automatically
-const WAHA_BASE_URL = process.env.WAHA_BASE_URL ?? "http://localhost:3000";
+// In single-container mode start.sh sets WAHA_BASE_URL=http://localhost:3001
+const WAHA_BASE_URL = process.env.WAHA_BASE_URL ?? "http://localhost:3001";
 const WAHA_DEFAULT_SESSION = process.env.WAHA_DEFAULT_SESSION ?? "default";
 
 // ── WAHA client ─────────────────────────────────────────────────────────────

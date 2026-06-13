@@ -1,60 +1,59 @@
 #!/bin/bash
 set -e
 
-# ── Diagnostics — print env so we can debug port issues in Railway logs ───────
-echo "[start] === waha-mcp-server starting ==="
-echo "[start] PORT=${PORT:-<unset>}  (Railway injects this; MCP will serve on it)"
-echo "[start] MCP_API_KEY=${MCP_API_KEY:+set}${MCP_API_KEY:-MISSING}"
-echo "[start] WAHA_API_KEY=${WAHA_API_KEY:+set}${WAHA_API_KEY:-MISSING}"
-echo "[start] WAHA_BASE_URL will be http://localhost:3000 (hardcoded)"
+# ── Port strategy ───────────────────────────────────────────────────────────
+#
+# Railway's serviceDomains config shows port:8080, so Railway routes external
+# traffic to container:8080. We hard-code MCP on 8080 and WAHA on 3001.
+#
+# We CANNOT rely on $PORT env var because:
+#   (a) WAHA's NestJS uses PORT internally; if $PORT=3000 WAHA and MCP compete.
+#   (b) WAHA might use WAHA_PORT (not PORT) and ignore our PORT=3000 override.
+#
+# Solution: hard-code both ports so they are always separate.
+#
+MCP_PORT=8080   # Railway routes serviceDomains port:8080 here
+WAHA_PORT=3001  # WAHA internal-only port (never exposed)
 
 # ── Bridge env vars ─────────────────────────────────────────────────────────
-# WAHA expects WHATSAPP_API_KEY; we expose WAHA_API_KEY to keep things simple.
 export WHATSAPP_API_KEY="${WHATSAPP_API_KEY:-$WAHA_API_KEY}"
+export WAHA_BASE_URL="http://localhost:${WAHA_PORT}"
 
-# MCP server connects to WAHA on localhost (same container)
-export WAHA_BASE_URL="http://localhost:3000"
+echo "[start] PORT env from Railway : ${PORT:-<unset>}"
+echo "[start] MCP_PORT (hard-coded) : $MCP_PORT"
+echo "[start] WAHA_PORT (hard-coded): $WAHA_PORT"
+echo "[start] WAHA_BASE_URL         : $WAHA_BASE_URL"
+echo "[start] MCP_API_KEY           : ${MCP_API_KEY:+set}${MCP_API_KEY:-MISSING}"
 
 # ── Graceful shutdown ───────────────────────────────────────────────────────
 cleanup() {
-  echo "[start] Shutting down MCP server (pid $MCP_PID) and WAHA (pid $WAHA_PID)..."
-  kill "$MCP_PID" "$WAHA_PID" 2>/dev/null || true
-  wait "$MCP_PID" "$WAHA_PID" 2>/dev/null || true
+  echo "[start] Shutting down MCP server (pid ${MCP_PID:-?}) and WAHA (pid ${WAHA_PID:-?})..."
+  kill "${MCP_PID:-0}" "${WAHA_PID:-0}" 2>/dev/null || true
+  wait "${MCP_PID:-0}" "${WAHA_PID:-0}" 2>/dev/null || true
 }
 trap cleanup EXIT TERM INT
 
-# ── Start MCP server FIRST — must grab Railway's $PORT before WAHA ──────────
-# WAHA is pinned to port 3000 below. Starting MCP first ensures it owns $PORT
-# (Railway's public-facing port) even if there is any timing race.
-echo "[start] Starting MCP server on :${PORT:-8080}..."
-# Merge stderr into stdout so Railway captures crash messages
-node /mcp/dist/index.js 2>&1 &
+# ── Start MCP server FIRST on hard-coded port 8080 ─────────────────────────
+echo "[start] Starting MCP server on :${MCP_PORT}..."
+PORT=${MCP_PORT} node /mcp/dist/index.js 2>&1 &
 MCP_PID=$!
 echo "[start] MCP server PID=$MCP_PID"
 
-# Give MCP a moment to bind before WAHA tries to start
-sleep 1
+# Give MCP a moment to bind before WAHA starts
+sleep 2
 
-# ── Start WAHA on a fixed internal port ────────────────────────────────────
-# Pin WAHA to port 3000 so it never competes with the MCP server for $PORT.
-# The free devlikeapro/waha image uses dist/index.js; waha-plus uses dist/main.js.
+# ── Start WAHA on hard-coded port 3001 ─────────────────────────────────────
 cd /app
 if [ -f dist/index.js ]; then
   WAHA_ENTRY="dist/index.js"
 else
   WAHA_ENTRY="dist/main.js"
 fi
-echo "[start] Starting WAHA ($WAHA_ENTRY) on :3000..."
-PORT=3000 node "$WAHA_ENTRY" 2>&1 &
+echo "[start] Starting WAHA ($WAHA_ENTRY) on :${WAHA_PORT}..."
+# Set BOTH PORT and WAHA_PORT so WAHA uses 3001 regardless of which env var it reads
+PORT=${WAHA_PORT} WAHA_PORT=${WAHA_PORT} node "$WAHA_ENTRY" 2>&1 &
 WAHA_PID=$!
 echo "[start] WAHA PID=$WAHA_PID"
 
-# ── Monitor: log if either process dies unexpectedly ───────────────────────
-monitor() {
-  wait "$MCP_PID"
-  echo "[start] ⚠ MCP server (PID $MCP_PID) exited — container will keep running until WAHA exits"
-}
-monitor &
-
-# ── Wait — exit if WAHA dies (that is the primary failure signal) ───────────
-wait "$WAHA_PID" "$MCP_PID"
+# ── Wait — container exits when either process dies ─────────────────────────
+wait "${MCP_PID}" "${WAHA_PID}"
