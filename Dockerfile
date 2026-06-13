@@ -24,6 +24,12 @@ COPY --from=builder /mcp/node_modules /mcp/node_modules
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
+# Install diagnostic tools (curl for health probes, iproute2 for ss port listing).
+# The WAHA base image is Debian/Ubuntu so apt-get is available.
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends curl iproute2 && \
+    rm -rf /var/lib/apt/lists/*
+
 # Override WAHA's EXPOSE 3000 so Railway routes external traffic to 8080
 # and injects PORT=8080. Without this Railway uses WAHA's EXPOSE 3000, routes
 # to 3000, and our MCP server (on 8080) is unreachable from outside.

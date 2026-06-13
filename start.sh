@@ -52,6 +52,28 @@ echo "[start] WAHA PID=${WAHA_PID}"
 # Running in foreground means all MCP output goes to container stdout and
 # is always visible in Railway logs. If MCP crashes, cleanup kills WAHA.
 echo "[start] Starting MCP server on :${MCP_PORT} (foreground)..."
-PORT=${MCP_PORT} node /mcp/dist/index.js
+PORT=${MCP_PORT} node /mcp/dist/index.js &
+MCP_PID=$!
+echo "[start] MCP PID=${MCP_PID}"
 
-# If node exits (MCP crashed or stopped), cleanup trap fires automatically.
+# ── Diagnostic loop — logs open ports + local reachability every 15s ───────
+# This runs AFTER MCP has had time to bind, proving whether 8080 is open
+# inside the container (independent of Railway's external proxy).
+(
+  sleep 8  # let both processes finish starting
+  while true; do
+    PORTS=$(ss -tlnp 2>/dev/null | awk 'NR>1 {print $4}' | sort -u | tr '\n' ' ' \
+            || netstat -tlnp 2>/dev/null | awk 'NR>2 {print $4}' | sort -u | tr '\n' ' ' \
+            || echo "ss/netstat unavailable")
+    MCP_HTTP=$(curl -s -m 3 -o /dev/null -w '%{http_code}' http://localhost:${MCP_PORT}/health 2>&1 || echo "ERR")
+    WAHA_HTTP=$(curl -s -m 3 -o /dev/null -w '%{http_code}' http://localhost:${WAHA_PORT}/health 2>&1 || echo "ERR")
+    echo "[diag] ports listening: ${PORTS}"
+    echo "[diag] localhost:${MCP_PORT}/health → HTTP ${MCP_HTTP}"
+    echo "[diag] localhost:${WAHA_PORT}/health → HTTP ${WAHA_HTTP}"
+    sleep 15
+  done
+) &
+
+# Wait for either process to exit. If MCP exits, cleanup fires.
+wait $MCP_PID
+
