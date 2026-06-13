@@ -285,17 +285,24 @@ process.on("unhandledRejection", (reason) => {
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 
-// Explicitly bind to 0.0.0.0 (IPv4 all-interfaces).
-// Without this Node.js may bind to :: (IPv6 only) on some Linux configs,
-// which causes Railway's IPv4 proxy to get ECONNREFUSED → 502.
-const httpServer = app.listen(PORT, "0.0.0.0", async () => {
+// Bind to :: (IPv6 any) with dual-stack — accepts BOTH IPv4 and IPv6 connections.
+//
+// Why not "0.0.0.0"?
+//   Diagnostic confirmed: ss shows WAHA on *:3001 (=:::3001, dual-stack) while MCP
+//   on 0.0.0.0:8080. Railway's Hikari proxy reaches containers via IPv6 overlay
+//   network → 0.0.0.0 (IPv4-only) gets ECONNREFUSED externally (502), but Railway's
+//   health check probes via IPv4 loopback on the same node (passes → deploy SUCCESS).
+//   Binding to :: with ipv6Only=false mirrors what NestJS/WAHA does by default and
+//   makes the server reachable over both IPv4 and IPv6.
+const httpServer = app.listen({ port: PORT, host: "::", ipv6Only: false }, async () => {
   // Flush synchronously so Railway captures this even if we crash right after
-  process.stdout.write(`\n[waha-mcp] Server started on 0.0.0.0:${PORT}\n`);
+  process.stdout.write(`\n[waha-mcp] Server started on :::${PORT} (dual-stack)\n`);
   process.stdout.write(`  MCP endpoint : POST /mcp  (x-api-key: <MCP_API_KEY>)\n`);
   process.stdout.write(`  QR setup     : GET  /setup/qr?key=<MCP_API_KEY>\n`);
   process.stdout.write(`  Session info : GET  /setup/status?key=<MCP_API_KEY>\n`);
   process.stdout.write(`  Health       : GET  /health\n`);
-  process.stdout.write(`  WAHA backend : ${WAHA_BASE_URL}\n\n`);
+  process.stdout.write(`  WAHA backend : ${WAHA_BASE_URL}\n`);
+  process.stdout.write(`  Bound on     : :::${PORT} (IPv4+IPv6 dual-stack)\n\n`);
 
   await startupChecks();
 });
