@@ -10,7 +10,7 @@ RUN npm run build && npm prune --omit=dev
 # ── Stage 2: WAHA base + MCP server ───────────────────────────────────────
 # Uses devlikeapro/waha as the base — WAHA runs on :3000,
 # our MCP server runs on :${PORT} (Railway injects this).
-FROM devlikeapro/waha
+FROM devlikeapro/waha-plus
 
 # Copy compiled MCP server and its production node_modules
 # package.json is required so Node.js knows /mcp/dist/*.js files are ESM
