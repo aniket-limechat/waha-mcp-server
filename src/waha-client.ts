@@ -168,6 +168,20 @@ export class WahaClient {
     }
   }
 
+  /** Fetch QR as raw PNG buffer — works regardless of whether WAHA returns
+   *  JSON {imageBase64} or a raw image/png response. */
+  async getQRRaw(session = "default"): Promise<Buffer> {
+    try {
+      const res = await this.http.get(`/api/${session}/auth/qr`, {
+        params: { format: "image" },
+        responseType: "arraybuffer",
+      });
+      return Buffer.from(res.data);
+    } catch (err) {
+      throw friendlyError(err, `getQRRaw(${session})`);
+    }
+  }
+
   // ── Messages ──────────────────────────────────────────────────────────────
 
   async sendText(payload: SendTextPayload): Promise<WahaMessage> {

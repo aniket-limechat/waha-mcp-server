@@ -89,11 +89,29 @@ app.get("/health", async (_req, res) => {
   });
 });
 
+// ── QR raw PNG proxy ────────────────────────────────────────────────────────
+// Returns raw PNG bytes — used as <img src> by the /setup/qr page
+
+app.get("/setup/qr.png", requireAdminKey, async (req, res) => {
+  const session = (req.query.session as string) ?? WAHA_DEFAULT_SESSION;
+  try {
+    const pngBuf = await waha.getQRRaw(session);
+    res.set("Content-Type", "image/png");
+    res.set("Cache-Control", "no-store");
+    res.send(pngBuf);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[setup/qr.png] error:", msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
 // ── QR setup endpoint ───────────────────────────────────────────────────────
 // Open in browser after deploy to scan WhatsApp QR
 
 app.get("/setup/qr", requireAdminKey, async (req, res) => {
   const session = (req.query.session as string) ?? WAHA_DEFAULT_SESSION;
+  const key = (req.headers["x-api-key"] ?? req.query["key"]) as string;
   try {
     // Ensure session is started before asking for QR
     const sessions = await waha.listSessions();
@@ -101,24 +119,17 @@ app.get("/setup/qr", requireAdminKey, async (req, res) => {
     if (!existing) {
       console.log(`[setup] Starting session '${session}' for QR…`);
       await waha.startSession(session);
-      // Give WAHA a moment to initialise
       await new Promise((r) => setTimeout(r, 2000));
     }
 
-    const qr = await waha.getQR(session);
-    const imgSrc =
-      typeof qr.imageBase64 === "string"
-        ? qr.imageBase64.startsWith("data:")
-          ? qr.imageBase64
-          : `data:image/png;base64,${qr.imageBase64}`
-        : String(qr);
+    // Image loaded via separate /setup/qr.png route (avoids binary-in-HTML encoding issues)
+    const imgSrc = `/setup/qr.png?key=${encodeURIComponent(key)}&session=${encodeURIComponent(session)}&_t=${Date.now()}`;
 
     res.send(`<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8"/>
   <title>WAHA QR — ${session}</title>
-  <meta http-equiv="refresh" content="15">
   <style>
     body { background:#0f172a; display:flex; align-items:center; justify-content:center;
            height:100vh; margin:0; font-family:system-ui,sans-serif; color:#e2e8f0; }
@@ -129,16 +140,27 @@ app.get("/setup/qr", requireAdminKey, async (req, res) => {
           border-radius:0.5rem; background:#fff; padding:8px; }
     code { background:#0f172a; padding:0.2rem 0.5rem; border-radius:0.25rem;
            font-size:0.8rem; color:#38bdf8; }
+    button { margin-top:1rem; padding:0.5rem 1.25rem; background:#38bdf8; color:#0f172a;
+             border:none; border-radius:0.5rem; font-size:0.9rem; cursor:pointer; }
   </style>
 </head>
 <body>
   <div class="card">
     <h2>Scan with WhatsApp</h2>
     <p>Settings → Linked Devices → Link a Device</p>
-    <img src="${imgSrc}" alt="QR code"/>
+    <img id="qr" src="${imgSrc}" alt="QR code"/>
     <p>Session: <code>${session}</code></p>
-    <p>Page auto-refreshes every 15s if QR expires</p>
+    <p id="ts">Loaded at ${new Date().toISOString()}</p>
+    <button onclick="refresh()">Refresh QR</button>
   </div>
+  <script>
+    function refresh() {
+      const img = document.getElementById('qr');
+      img.src = '/setup/qr.png?key=${encodeURIComponent(key)}&session=${encodeURIComponent(session)}&_t=' + Date.now();
+      document.getElementById('ts').textContent = 'Refreshed at ' + new Date().toISOString();
+    }
+    setInterval(refresh, 20000);
+  </script>
 </body>
 </html>`);
   } catch (err: unknown) {
