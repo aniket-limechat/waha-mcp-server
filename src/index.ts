@@ -189,17 +189,37 @@ app.get("/setup/status", requireAdminKey, async (_req, res) => {
 app.post("/setup/restart", requireAdminKey, async (req, res) => {
   const session = (req.query.session as string) ?? WAHA_DEFAULT_SESSION;
   try {
-    console.log(`[setup/restart] Restarting session '${session}'...`);
-    // Stop (ignore errors if not running)
+    console.log(`[setup/restart] Hard-restarting session '${session}' with NOWEB engine...`);
+    // Stop first (ignore errors)
     try { await waha.stopSession(session); } catch (_) { /* ok */ }
+    await new Promise((r) => setTimeout(r, 1000));
+    // Hard-delete so old WEBJS auth state is wiped from disk
+    try { await waha.deleteSession(session); } catch (_) { /* ok if not found */ }
     await new Promise((r) => setTimeout(r, 2000));
-    // Start fresh — WAHA will use WHATSAPP_DEFAULT_ENGINE (NOWEB)
+    // Start fresh — now also passes engine:"NOWEB" explicitly in the payload
     const started = await waha.startSession(session);
-    console.log(`[setup/restart] Session '${session}' restarted:`, started.status);
-    res.json({ ok: true, session, status: started.status });
+    console.log(`[setup/restart] Session '${session}' restarted with NOWEB:`, started.status);
+    res.json({ ok: true, session, status: started.status, engine: "NOWEB" });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[setup/restart] error:", msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+
+// ── Debug endpoint — proxies WAHA version + session detail ─────────────────
+// Lets us verify which engine is active without Railway logs.
+
+app.get("/setup/debug", requireAdminKey, async (_req, res) => {
+  try {
+    const [version, sessions] = await Promise.all([
+      waha.getVersion(),
+      waha.listSessions(),
+    ]);
+    res.json({ version, sessions });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: msg });
   }
 });

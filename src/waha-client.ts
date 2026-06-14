@@ -144,7 +144,12 @@ export class WahaClient {
 
   async startSession(session = "default"): Promise<WahaSession> {
     try {
-      const res = await this.http.post("/api/sessions/start", { name: session });
+      // Explicitly request NOWEB engine — do not rely solely on WHATSAPP_DEFAULT_ENGINE env var,
+      // because old sessions created under WEBJS may persist and ignore the env var.
+      const res = await this.http.post("/api/sessions/start", {
+        name: session,
+        config: { engine: "NOWEB" },
+      });
       return res.data;
     } catch (err) {
       throw friendlyError(err, `startSession(${session})`);
@@ -156,6 +161,25 @@ export class WahaClient {
       await this.http.post("/api/sessions/stop", { name: session });
     } catch (err) {
       throw friendlyError(err, `stopSession(${session})`);
+    }
+  }
+
+  /** Hard-delete the session — wipes auth state from disk so next start is truly fresh. */
+  async deleteSession(session = "default"): Promise<void> {
+    try {
+      await this.http.delete(`/api/sessions/${session}`);
+    } catch (err) {
+      throw friendlyError(err, `deleteSession(${session})`);
+    }
+  }
+
+  /** Fetch WAHA version — verifies which engine build is active. */
+  async getVersion(): Promise<Record<string, unknown>> {
+    try {
+      const res = await this.http.get("/api/version");
+      return res.data;
+    } catch (err) {
+      throw friendlyError(err, "getVersion");
     }
   }
 
